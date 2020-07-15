@@ -1,7 +1,7 @@
 #![feature(const_fn, type_alias_impl_trait)]
 
 use std::future::Future;
-use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicI64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub trait Delay {
@@ -27,7 +27,7 @@ pub struct Snowflake<D: Delay> {
     node_id: u16,
     delay: D,
     counter: AtomicU16,
-    last_timestep: AtomicU64,
+    last_timestep: AtomicI64,
 }
 
 impl<D: Delay> Snowflake<D> {
@@ -37,18 +37,18 @@ impl<D: Delay> Snowflake<D> {
             node_id,
             delay,
             counter: AtomicU16::new(0),
-            last_timestep: AtomicU64::new(0),
+            last_timestep: AtomicI64::new(0),
         }
     }
 
-    pub async fn generate(&self) -> u64 {
+    pub async fn generate(&self) -> i64 {
         let (timestamp, sequence) = loop {
             let timestamp = {
                 let unix_timestamp = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_else(|_| unreachable!())
                     .as_millis();
-                (unix_timestamp - self.epoch) as u64
+                (unix_timestamp - self.epoch) as i64
             };
             if timestamp == self.last_timestep.swap(timestamp, Ordering::SeqCst) {
                 let sequence = (self.counter.load(Ordering::SeqCst) + 1) & 4095;
@@ -66,7 +66,7 @@ impl<D: Delay> Snowflake<D> {
         const NODE_ID_WIDTH: u8 = 10;
         const SEQUENCE_WIDTH: u8 = 12;
         (timestamp << (NODE_ID_WIDTH + SEQUENCE_WIDTH))
-            | ((self.node_id as u64) << SEQUENCE_WIDTH)
-            | sequence as u64
+            | ((self.node_id as i64) << SEQUENCE_WIDTH)
+            | sequence as i64
     }
 }
