@@ -1,27 +1,41 @@
-#![feature(const_fn)]
+#![feature(const_fn, type_alias_impl_trait)]
 
 use std::future::Future;
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub struct Snowflake<F> {
-    epoch: u128,
-    node_id: u16,
-    wait_fn: F,
-    counter: AtomicU16,
-    last_timestep: AtomicU64,
+pub trait Delay {
+    type Future: Future;
+
+    fn delay(&self) -> Self::Future;
 }
 
-impl<F, Fut> Snowflake<F>
+impl<F, Fut> Delay for F
 where
     F: Fn() -> Fut,
     Fut: Future<Output = ()>,
 {
-    pub const fn new(epoch: u128, node_id: u16, wait_fn: F) -> Self {
+    type Future = impl Future<Output = ()>;
+
+    fn delay(&self) -> Self::Future {
+        self()
+    }
+}
+
+pub struct Snowflake<D: Delay> {
+    epoch: u128,
+    node_id: u16,
+    delay: D,
+    counter: AtomicU16,
+    last_timestep: AtomicU64,
+}
+
+impl<D: Delay> Snowflake<D> {
+    pub const fn new(epoch: u128, node_id: u16, delay: D) -> Self {
         Self {
             epoch,
             node_id,
-            wait_fn,
+            delay,
             counter: AtomicU16::new(0),
             last_timestep: AtomicU64::new(0),
         }
@@ -42,7 +56,7 @@ where
                 if sequence != 0 {
                     break (timestamp, sequence);
                 } else {
-                    (self.wait_fn)().await
+                    self.delay.delay().await
                 }
             } else {
                 self.counter.store(0, Ordering::SeqCst);
